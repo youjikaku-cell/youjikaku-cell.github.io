@@ -22,7 +22,7 @@ for forbidden in [
 for required in [
     '社会保険314,440円',
     '社労士顧問料22,000円',
-    '要確認支出は¥0',
+    '"unknown_total":0',
     '確認対象はすべて分類済み',
 ]:
     if required not in s:
