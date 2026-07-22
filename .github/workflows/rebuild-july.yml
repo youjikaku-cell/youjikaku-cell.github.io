@@ -1,9 +1,10 @@
-name: Rebuild July dashboard
+name: Rebuild dashboard
 on:
   workflow_dispatch:
   push:
     paths:
       - 'tools/rebuild_july.py'
+      - 'tools/apply_expense_confirmations.py'
       - '.github/workflows/rebuild-july.yml'
 permissions:
   contents: write
@@ -15,8 +16,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Rebuild and verify
+      - name: Rebuild July data
         run: python tools/rebuild_july.py
+      - name: Apply expense confirmations
+        run: python tools/apply_expense_confirmations.py
       - name: Commit verified result
         run: |
           if git diff --quiet -- index.html; then
@@ -26,5 +29,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add index.html
-          git commit -m '7月1日から20日を単一月へ統合し全分析機能を保持'
+          git commit -m '支出確認回答を経営分析とコンサルへ統合'
           git push
