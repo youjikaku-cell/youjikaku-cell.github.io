@@ -5,6 +5,7 @@ on:
     paths:
       - 'tools/rebuild_july.py'
       - 'tools/apply_expense_confirmations.py'
+      - 'tools/final_cleanup.py'
       - '.github/workflows/rebuild-july.yml'
 permissions:
   contents: write
@@ -18,8 +19,10 @@ jobs:
           python-version: '3.12'
       - name: Rebuild July data
         run: python tools/rebuild_july.py
-      - name: Apply expense confirmations
+      - name: Apply confirmed expense analysis
         run: python tools/apply_expense_confirmations.py
+      - name: Final wording and JavaScript verification
+        run: python tools/final_cleanup.py
       - name: Commit verified result
         run: |
           if git diff --quiet -- index.html; then
@@ -29,5 +32,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add index.html
-          git commit -m '支出確認回答を経営分析とコンサルへ統合'
+          git commit -m '確定支出を反映した経営分析完全版を公開'
           git push
