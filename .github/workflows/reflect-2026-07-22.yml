@@ -1,0 +1,192 @@
+name: Reflect July 22 sales data
+
+on:
+  push:
+    paths:
+      - '.github/workflows/reflect-2026-07-22.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update embedded dashboard data
+        run: |
+          python - <<'PY'
+          import json, re
+          from pathlib import Path
+
+          path = Path('index.html')
+          text = path.read_text(encoding='utf-8')
+          marker = '<!-- DATA_2026_07_22_APPLIED -->'
+          if marker in text:
+              print('7/22 data already applied')
+              raise SystemExit(0)
+
+          m = re.search(r'const EMBEDDED_DATA=(\{.*?\});\nfunction embeddedKey', text, re.S)
+          if not m:
+              raise RuntimeError('EMBEDDED_DATA was not found')
+          data = json.loads(m.group(1))
+
+          daily = {
+              'business_date':'2026-07-22','total_sales':278000,'customers':199,
+              'avg_spend':1396.0,'issued_count':293,'settlement_count':0,
+              'settlement_amount':0,'net_count':293,'lunch_sales':87950,
+              'evening_sales':83200,'late_sales':106850,
+              'notes':'7/22写真入力・時間帯別売上は精算前'
+          }
+
+          hourly_rows = [
+              ('0:00','深夜',27,26150),('1:00','深夜',20,19710),('2:00','深夜',0,0),
+              ('3:00','その他',0,0),('4:00','その他',0,0),('5:00','その他',0,0),
+              ('6:00','その他',0,0),('7:00','その他',0,0),('8:00','その他',0,0),
+              ('9:00','その他',0,0),('10:00','昼',0,0),('11:00','昼',9,11350),
+              ('12:00','昼',22,18000),('13:00','昼',20,20290),('14:00','昼',9,10830),
+              ('15:00','昼',12,10880),('16:00','昼',5,4550),('17:00','昼',19,15000),
+              ('18:00','夜',7,6450),('19:00','夜',25,24830),('20:00','夜',34,32370),
+              ('21:00','夜',22,19410),('22:00','夜',35,33400),('23:00','夜',26,24780)
+          ]
+
+          products = [
+              ('究極の味噌ラーメン','ラーメン',105,115500),
+              ('バターコーンラーメン味噌','ラーメン',29,40600),
+              ('チャーシューメン味噌','ラーメン',8,11600),
+              ('ネギたっぷりラーメン味噌','ラーメン',4,5200),
+              ('ピリ辛ネギラーメン味噌','ラーメン',8,10400),
+              ('キムチラーメン味噌','ラーメン',1,1250),
+              ('ラーメン醤油','ラーメン',7,6860),
+              ('バターコーンラーメン醤油','ラーメン',1,1300),
+              ('チャーシューメン醤油','ラーメン',3,4050),
+              ('ネギたっぷりラーメン醤油','ラーメン',2,2360),
+              ('ラーメン塩','ラーメン',10,9800),
+              ('ピリ辛ネギラーメン塩','ラーメン',1,1180),
+              ('味噌＋餃子セット','セット',2,2900),
+              ('醤油＋餃子セット','セット',2,2800),
+              ('大盛り','追加・トッピング',11,2200),
+              ('トッピングチャーシュー','追加・トッピング',1,450),
+              ('辛みそラーメン（期間限定）','ラーメン',2,2400),
+              ('お子様ラーメン味噌','ラーメン',3,2100),
+              ('お子様ラーメン醤油','ラーメン',3,1950),
+              ('バター・コーン','追加・トッピング',5,1000),
+              ('ねぎ・ピリ辛ねぎ','追加・トッピング',2,400),
+              ('ライス大','ご飯・丼',3,600),('ライス小','ご飯・丼',2,300),
+              ('チャーハン','ご飯・丼',18,14400),('餃子','サイド・餃子',22,11000),
+              ('生ビール（700円）','飲料',1,700),('生ビール','飲料',9,5400),
+              ('瓶ビール','飲料',23,16100),('ジュース・コーラ','飲料',4,1200),
+              ('つばさラーメン','ラーメン',1,2000)
+          ]
+          assert sum(x[3] for x in products) == 278000
+          assert sum(x[3] for x in hourly_rows) == 278000
+
+          def upsert_daily(key):
+              rows = data.get(key)
+              if not isinstance(rows, list): return
+              rows[:] = [r for r in rows if r.get('business_date') != daily['business_date']]
+              rows.append(dict(daily)); rows.sort(key=lambda r:r.get('business_date',''))
+
+          def add_hourly(key):
+              obj = data.get(key)
+              rows = obj.get('rows') if isinstance(obj,dict) else obj
+              if not isinstance(rows,list): return
+              by = {str(r.get('hour')):r for r in rows}
+              for hour,period,count,sales in hourly_rows:
+                  r = by.get(hour)
+                  if r:
+                      r['issued_count'] = int(r.get('issued_count',0)) + count
+                      r['sales'] = int(r.get('sales',0)) + sales
+                  else:
+                      rows.append({'hour':hour,'period':period,'issued_count':count,'sales':sales})
+              rows.sort(key=lambda r:int(str(r.get('hour','0')).split(':')[0]))
+
+          def norm(s):
+              return re.sub(r'[\s　・（）()＋+\-ー]', '', str(s))
+
+          def add_products(key):
+              rows = data.get(key)
+              if not isinstance(rows,list): return
+              lookup = {norm(r.get('name')):r for r in rows}
+              for name,cat,qty,sales in products:
+                  r = lookup.get(norm(name))
+                  if r:
+                      r['qty'] = int(r.get('qty',0)) + qty
+                      r['sales'] = int(r.get('sales',0)) + sales
+                  else:
+                      r={'name':name,'category':cat,'qty':qty,'sales':sales,'share':0}
+                      rows.append(r); lookup[norm(name)] = r
+              total=sum(int(r.get('sales',0)) for r in rows)
+              for r in rows:r['share']=int(r.get('sales',0))/total if total else 0
+              rows.sort(key=lambda r:int(r.get('sales',0)), reverse=True)
+
+          for key in ('daily_2026-07','daily_all'): upsert_daily(key)
+          for key in ('hourly_2026-07','hourly_all'): add_hourly(key)
+          for key in ('products_2026-07','products_all'): add_products(key)
+
+          july = data.get('daily_2026-07',[])
+          all_daily = data.get('daily_all') or data.get('daily_2026-06',[]) + july
+          def stats(rows):
+              active=[r for r in rows if int(r.get('total_sales',0))>0]
+              sales=sum(int(r.get('total_sales',0)) for r in active)
+              cust=sum(int(r.get('customers',0)) for r in active)
+              days=len(active)
+              return sales,cust,days,sales/days if days else 0,sales/cust if cust else 0
+          js,jc,jd,javg,jsp=stats(july)
+          ts,tc,td,tavg,tsp=stats(all_daily)
+
+          for r in data.get('monthly',[]):
+              if r.get('month')=='2026-07':
+                  r.update({'sales':js,'customers':jc,'days':jd,'avg_daily':javg,'avg_spend':jsp})
+          ovj=data.get('overview_2026-07')
+          if isinstance(ovj,dict):
+              ovj.update({'month':'2026-07','total_sales':ts,'total_customers':tc,'total_days':td,
+                          'month_sales':js,'month_customers':jc,'month_days':jd,
+                          'avg_daily':javg,'avg_spend':jsp,'projection':javg*27})
+          ova=data.get('overview_all')
+          if isinstance(ova,dict):
+              months=max(1,len(data.get('bootstrap',{}).get('months',[])))
+              ova.update({'total_sales':ts,'total_customers':tc,'total_days':td,
+                          'avg_daily':tavg,'avg_spend':tsp,'month_count':months,
+                          'avg_monthly':ts/months,'avg_customers_per_day':tc/td if td else 0})
+          boot=data.get('bootstrap',{}).get('overview')
+          if isinstance(boot,dict):
+              boot.update({'month':'2026-07','total_sales':ts,'total_customers':tc,'total_days':td,
+                           'month_sales':js,'month_customers':jc,'month_days':jd,
+                           'avg_daily':javg,'avg_spend':jsp,'projection':javg*27})
+
+          def refresh_quality(key,dkey,pkey,hkey):
+              q=data.get(key)
+              if not isinstance(q,dict): return
+              dsum=sum(int(r.get('total_sales',0)) for r in data.get(dkey,[]) if int(r.get('total_sales',0))>0)
+              psum=sum(int(r.get('sales',0)) for r in data.get(pkey,[]))
+              hobj=data.get(hkey,{})
+              hrows=hobj.get('rows',[]) if isinstance(hobj,dict) else hobj
+              hsum=sum(int(r.get('sales',0)) for r in (hrows or []))
+              settlement=sum(int(r.get('settlement_amount',0)) for r in data.get(dkey,[]))
+              q.update({'daily':dsum,'products':psum,'hourly':hsum,'settlement_adjustment':settlement,
+                        'hourly_net':hsum+settlement,'product_match':dsum==psum,
+                        'hourly_match':dsum==hsum+settlement,'matched':dsum==psum==hsum+settlement})
+          refresh_quality('quality_2026-07','daily_2026-07','products_2026-07','hourly_2026-07')
+          if 'daily_all' in data: refresh_quality('quality_all','daily_all','products_all','hourly_all')
+
+          new_json=json.dumps(data,ensure_ascii=False,separators=(',',':'))
+          text=text[:m.start(1)]+new_json+text[m.end(1):]
+          text=text.replace('売上は7月20日分まで','売上は7月22日分まで')
+          text=text.replace('データ更新 2026/7/18（通帳6・7頁反映）','データ更新 2026/7/23（7月22日売上反映）')
+          text=text.replace('</body>', marker+'\n</body>')
+          path.write_text(text,encoding='utf-8')
+          print('7/22 sales data reflected')
+          PY
+      - name: Commit updated dashboard
+        run: |
+          if git diff --quiet; then
+            echo 'No changes'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git commit -m '7月22日売上データをダッシュボードへ反映'
+          git push
