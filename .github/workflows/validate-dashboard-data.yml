@@ -1,0 +1,85 @@
+name: Validate dashboard data
+
+on:
+  push:
+    paths:
+      - 'index.html'
+      - '.github/workflows/validate-dashboard-data.yml'
+  pull_request:
+    paths:
+      - 'index.html'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate embedded dashboard data
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          text = Path('index.html').read_text(encoding='utf-8')
+          token = 'const EMBEDDED_DATA='
+          start = text.find(token)
+          if start < 0:
+              raise RuntimeError('EMBEDDED_DATA start was not found')
+          json_start = start + len(token)
+          endings = (';\nfunction embeddedKey', ';\r\nfunction embeddedKey', ';\n\nfunction embeddedKey')
+          end = -1
+          for marker in endings:
+              end = text.find(marker, json_start)
+              if end >= 0:
+                  break
+          if end < 0:
+              raise RuntimeError('EMBEDDED_DATA end was not found')
+
+          data = json.loads(text[json_start:end])
+
+          def rows(key):
+              value = data.get(key, [])
+              if not isinstance(value, list):
+                  raise AssertionError(f'{key} must be a list')
+              return value
+
+          def active_daily(key):
+              return [r for r in rows(key) if int(r.get('total_sales', 0)) > 0]
+
+          july = rows('daily_2026-07')
+          july22 = [r for r in july if r.get('business_date') == '2026-07-22']
+          assert len(july22) == 1, f'2026-07-22 must appear exactly once, found {len(july22)}'
+          target = july22[0]
+          assert int(target.get('total_sales', 0)) == 278000
+          assert int(target.get('customers', 0)) == 199
+          assert int(target.get('issued_count', 0)) == 293
+
+          july_sales = sum(int(r.get('total_sales', 0)) for r in active_daily('daily_2026-07'))
+          july_customers = sum(int(r.get('customers', 0)) for r in active_daily('daily_2026-07'))
+          july_days = len(active_daily('daily_2026-07'))
+
+          overview = data.get('overview_2026-07') or data.get('bootstrap', {}).get('overview', {})
+          assert int(overview.get('month_sales', 0)) == july_sales, (overview.get('month_sales'), july_sales)
+          assert int(overview.get('month_customers', 0)) == july_customers, (overview.get('month_customers'), july_customers)
+          assert int(overview.get('month_days', 0)) == july_days, (overview.get('month_days'), july_days)
+
+          product_sales = sum(int(r.get('sales', 0)) for r in rows('products_2026-07'))
+          hourly_obj = data.get('hourly_2026-07', {})
+          hourly_rows = hourly_obj.get('rows', []) if isinstance(hourly_obj, dict) else hourly_obj
+          hourly_sales = sum(int(r.get('sales', 0)) for r in hourly_rows)
+          settlement = sum(int(r.get('settlement_amount', 0)) for r in july)
+
+          assert product_sales == july_sales, (product_sales, july_sales)
+          assert hourly_sales + settlement == july_sales, (hourly_sales, settlement, july_sales)
+          assert '売上は7月22日分まで' in text
+          assert '<!-- DATA_2026_07_22_APPLIED -->' in text
+
+          print('Validation passed')
+          print({'july_sales': july_sales, 'july_customers': july_customers, 'july_days': july_days,
+                 'product_sales': product_sales, 'hourly_sales': hourly_sales,
+                 'settlement_adjustment': settlement})
+          PY
