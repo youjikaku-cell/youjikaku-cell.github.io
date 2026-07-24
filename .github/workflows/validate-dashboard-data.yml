@@ -41,11 +41,11 @@ jobs:
 
           data = json.loads(text[json_start:end])
 
-            def to_int(value, default=0):
+          def to_int(value, default=0):
               try:
-                return int(value)
+                  return int(value)
               except (TypeError, ValueError):
-                return default
+                  return default
 
           def rows(key):
               value = data.get(key, [])
@@ -79,12 +79,12 @@ jobs:
           hourly_sales = sum(to_int(r.get('sales', 0)) for r in hourly_rows)
           settlement = sum(to_int(r.get('settlement_amount', 0)) for r in july)
 
-            if product_sales != july_sales:
+          if product_sales != july_sales:
               print(f'warning: products_2026-07 sum mismatch (products={product_sales}, daily={july_sales})')
-            if hourly_sales + settlement != july_sales:
+          if hourly_sales + settlement != july_sales:
               print(
-                'warning: hourly_2026-07 + settlement mismatch '
-                f'(hourly={hourly_sales}, settlement={settlement}, daily={july_sales})'
+                  'warning: hourly_2026-07 + settlement mismatch '
+                  f'(hourly={hourly_sales}, settlement={settlement}, daily={july_sales})'
               )
           assert '売上は7月22日分まで' in text
           assert '<!-- DATA_2026_07_22_APPLIED -->' in text
