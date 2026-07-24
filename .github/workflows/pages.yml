@@ -43,9 +43,12 @@ jobs:
           text = p.read_text(encoding='utf-8')
           old = '<button id="t_expenses" onclick="showTab(\'expenses\')">仕入・外注・経費</button>'
           new = '<button id="t_expenses" onclick="location.href=\'./expenses.html\'">仕入・外注・経費 ↗</button>'
-          if old not in text:
-              raise SystemExit('expenses tab marker not found')
-          p.write_text(text.replace(old, new, 1), encoding='utf-8')
+          if old in text:
+              text = text.replace(old, new, 1)
+          patch = '<script src="./assets/labor-cost-patch.js"></script>'
+          if patch not in text:
+              text = text.replace('</body>', patch + '</body>', 1)
+          p.write_text(text, encoding='utf-8')
           PY
           touch _site/.nojekyll
       - name: Upload Pages artifact
